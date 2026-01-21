@@ -1,11 +1,10 @@
-# views/settings_page.py
+# views/initial_page.py
 
 import tkinter as tk
 from views.themed_frame import ThemedFrame
-# from views.theme_preview import ThemePreview
 
 
-class SettingsPage(ThemedFrame):
+class InitialPage(ThemedFrame):
     def __init__(self, parent, controller):
         super().__init__(parent, controller)
 
@@ -27,7 +26,7 @@ class SettingsPage(ThemedFrame):
         self.controller = controller
 
         self.label = tk.Label(
-            self, text="Settings Page", font=("Arial", 20))
+            self, text="initial Page", font=("Arial", 20))
         self.label.grid(column=3, row=0, sticky=tk.NE, padx=5, pady=5)
 
         # Back button

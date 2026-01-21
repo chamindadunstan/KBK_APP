@@ -62,7 +62,9 @@ class Controller:
                 "go_settings": "Go to Settings",
                 "go_about": "Go to About",
                 # about page
-                "about_desc": "This is a Tkinter MVC demo with theming."
+                "about_desc": "This is a Tkinter MVC demo with theming.",
+                # initial page
+                "go_initial": "Go to Initial Page"
             },
 
             "jp": {
@@ -80,7 +82,9 @@ class Controller:
                 "go_settings": "設定ページへ",
                 "go_about": "アプリ情報へ",
                 # about page
-                "about_desc": "これはテーマ付きの Tkinter MVC デモです。"
+                "about_desc": "これはテーマ付きの Tkinter MVC デモです。",
+                # initial page
+                "go_initial": "初期ページへ"
             }
         }
 

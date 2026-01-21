@@ -2,10 +2,12 @@
 
 import tkinter as tk
 # from tkinter import ttk
+from waveform import draw_test_waveform
 
 from controller import Controller
 from views.home_page import HomePage
 from views.settings_page import SettingsPage
+from views.initial_page import InitialPage
 from views.about_page import AboutPage
 
 
@@ -13,9 +15,9 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
 
-        self.title("Tkinter MVC App")
-        self.geometry("800x600")
-
+        self.title("KBK App")
+        self.geometry("800x440")
+        self.iconbitmap('./assets/kbk.ico')
         # Create the container frame (must be tk.Frame, not ttk.Frame)
         self.container = tk.Frame(self)
         self.container.pack(fill="both", expand=True)
@@ -29,10 +31,14 @@ class App(tk.Tk):
         self._load_frames()
 
     def _load_frames(self):
-        for FrameClass in (HomePage, SettingsPage, AboutPage):
+        for FrameClass in (HomePage, SettingsPage, InitialPage, AboutPage):
             frame = FrameClass(
                 parent=self.container, controller=self.controller)
             self.controller.register_frame(FrameClass.__name__, frame)
             frame.grid(row=0, column=0, sticky="nsew")
 
+        # Show home page
         self.controller.show_frame("HomePage")
+
+        # Inject waveform
+        draw_test_waveform(self.controller)
