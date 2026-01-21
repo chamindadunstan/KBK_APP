@@ -59,6 +59,14 @@ class HomePage(ThemedFrame):
         self.freq = tk.DoubleVar(value=5.0)             # Hz
         self.amp = tk.DoubleVar(value=1.0)              # amplitude
 
+        # ---------- CURSOR STATE ----------
+        # Cursor A and B positions (sample indices)
+        self.cursor_a = None
+        self.cursor_b = None
+
+        # Matplotlib line objects for cursor visuals
+        self.cursor_lines = []
+
         # ---------- REAL-TIME OSCILLOSCOPE STATE ----------
         # Flag used to start/stop the real-time update loop
         self.realtime_running = False
@@ -81,6 +89,9 @@ class HomePage(ThemedFrame):
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.wave_frame)
         self.canvas_widget = self.canvas.get_tk_widget()
         self.canvas_widget.pack(fill="both", expand=True)
+
+        # Enable cursor click detection on waveform
+        self.canvas.mpl_connect("button_press_event", self._on_waveform_click)
 
         # ---------- FFT PLOT AREA ----------
         self.fft_frame = tk.Frame(self)
@@ -272,6 +283,69 @@ class HomePage(ThemedFrame):
             )
         )
 
+        # ---------- CURSOR INTERACTION ----------
+
+    def _draw_cursors(self):
+        """Draw vertical cursor lines on the waveform."""
+        self._clear_cursor_lines()
+
+        if self.cursor_a is not None:
+            line_a = self.ax.axvline(
+                self.cursor_a, color="yellow", linestyle="--"
+            )
+            self.cursor_lines.append(line_a)
+
+        if self.cursor_b is not None:
+            line_b = self.ax.axvline(
+                self.cursor_b, color="cyan", linestyle="--"
+            )
+            self.cursor_lines.append(line_b)
+
+        self.canvas.draw()
+
+    def _clear_cursor_lines(self):
+        """Remove all cursor lines from the plot."""
+        for line in self.cursor_lines:
+            line.remove()
+        self.cursor_lines.clear()
+
+    def _compute_cursor_measurements(self):
+        """Compute peak, RMS, and frequency based on cursor positions."""
+        if self.cursor_a is None:
+            return
+
+        # Use CH1 for measurement
+        n_samples = 500
+        t = np.linspace(0, 1, n_samples, endpoint=False)
+        sig = self._generate_single_channel(self.signal_type.get(), t)
+
+        # If only one cursor: show value at that point
+        if self.cursor_b is None:
+            y = sig[self.cursor_a]
+            self.measure_label.config(
+                text=f"Value: {y:.3f}   Peak: --   RMS: --   Freq: --"
+            )
+            return
+
+        # Two cursors: measure region
+        a, b = sorted([self.cursor_a, self.cursor_b])
+        region = sig[a:b]
+
+        if len(region) < 2:
+            return
+
+        peak = np.max(np.abs(region))
+        rms = np.sqrt(np.mean(region**2))
+
+        # Frequency from time difference
+        fs = self.sampling_rate.get()
+        dt = (b - a) / fs
+        freq = 1 / dt if dt > 0 else 0
+
+        self.measure_label.config(
+            text=f"Peak: {peak:.3f}   RMS: {rms:.3f}   Freq: {freq:.2f} Hz"
+        )
+
     # ---------- REAL-TIME OSCILLOSCOPE MODE ----------
 
     def start_realtime(self):
@@ -304,6 +378,35 @@ class HomePage(ThemedFrame):
 
         # Schedule next frame (16 ms = ~60 FPS)
         self.after(16, self._realtime_loop)
+
+        # ---------- CURSOR INTERACTION ----------
+
+    def _on_waveform_click(self, event):
+        """Handle mouse clicks on the waveform to place cursors."""
+        # Ignore clicks outside the waveform axes
+        if event.inaxes != self.ax:
+            return
+
+        x = int(event.xdata)
+
+        # First click sets Cursor A
+        if self.cursor_a is None:
+            self.cursor_a = x
+
+        # Second click sets Cursor B
+        elif self.cursor_b is None:
+            self.cursor_b = x
+
+        # Third click resets both
+        else:
+            self.cursor_a = None
+            self.cursor_b = None
+            self._clear_cursor_lines()
+            self.measure_label.config(text="Peak: --   RMS: --   Freq: --")
+            return
+
+        self._draw_cursors()
+        self._compute_cursor_measurements()
 
     # ---------- TEXT REFRESH (I18N) ----------
 
