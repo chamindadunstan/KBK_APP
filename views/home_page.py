@@ -5,6 +5,7 @@ from views.themed_frame import ThemedFrame
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+from matplotlib.offsetbox import AnchoredText
 import numpy as np
 
 
@@ -66,6 +67,10 @@ class HomePage(ThemedFrame):
 
         # Matplotlib line objects for cursor visuals
         self.cursor_lines = []
+
+        # ---------- MEASUREMENT OVERLAY ----------
+        # Floating Tektronix-style measurement box inside the waveform plot
+        self.measure_overlay = None
 
         # ---------- REAL-TIME OSCILLOSCOPE STATE ----------
         # Flag used to start/stop the real-time update loop
@@ -309,6 +314,31 @@ class HomePage(ThemedFrame):
             line.remove()
         self.cursor_lines.clear()
 
+    # ---------- MEASUREMENT OVERLAY BOX ----------
+    def _update_measure_overlay(self, text):
+        """Create or update the measurement overlay box."""
+        # Remove old overlay
+        if self.measure_overlay is not None:
+            self.measure_overlay.remove()
+
+        # Create new overlay
+        self.measure_overlay = AnchoredText(
+            text,
+            loc="upper right",
+            prop={"size": 10, "color": "white"},
+            frameon=True,
+            pad=0.4,
+            borderpad=0.5
+        )
+
+        # Style the box like Tektronix
+        self.measure_overlay.patch.set_facecolor("black")
+        self.measure_overlay.patch.set_alpha(0.6)
+        self.measure_overlay.patch.set_edgecolor("white")
+
+        self.ax.add_artist(self.measure_overlay)
+        self.canvas.draw()
+
     def _compute_cursor_measurements(self):
         """Compute peak, RMS, and frequency based on cursor positions."""
         if self.cursor_a is None:
@@ -322,9 +352,13 @@ class HomePage(ThemedFrame):
         # If only one cursor: show value at that point
         if self.cursor_b is None:
             y = sig[self.cursor_a]
-            self.measure_label.config(
-                text=f"Value: {y:.3f}   Peak: --   RMS: --   Freq: --"
+
+            overlay_text = (
+                f"Cursor A: {self.cursor_a}\n"
+                f"Value: {y:.3f}"
             )
+
+            self._update_measure_overlay(overlay_text)
             return
 
         # Two cursors: measure region
@@ -342,9 +376,17 @@ class HomePage(ThemedFrame):
         dt = (b - a) / fs
         freq = 1 / dt if dt > 0 else 0
 
-        self.measure_label.config(
-            text=f"Peak: {peak:.3f}   RMS: {rms:.3f}   Freq: {freq:.2f} Hz"
+        # ---------- OVERLAY TEXT  ----------
+        overlay_text = (
+            f"Cursor A: {a}\n"
+            f"Cursor B: {b}\n"
+            f"ΔX: {b - a} samples ({dt:.4f} s)\n"
+            f"Peak: {peak:.3f}\n"
+            f"RMS: {rms:.3f}\n"
+            f"Freq: {freq:.2f} Hz"
         )
+
+        self._update_measure_overlay(overlay_text)
 
     # ---------- REAL-TIME OSCILLOSCOPE MODE ----------
 
@@ -397,14 +439,23 @@ class HomePage(ThemedFrame):
         elif self.cursor_b is None:
             self.cursor_b = x
 
-        # Third click resets both
+        # Third click → Reset everything
         else:
             self.cursor_a = None
             self.cursor_b = None
             self._clear_cursor_lines()
-            self.measure_label.config(text="Peak: --   RMS: --   Freq: --")
-            return
 
+            # Remove overlay box
+            if self.measure_overlay is not None:
+                self.measure_overlay.remove()
+                self.measure_overlay = None
+
+            # Reset bottom label
+            self.measure_label.config(text="Peak: --   RMS: --   Freq: --")
+
+            # Redraw canvas
+            self.canvas.draw()
+            return
         self._draw_cursors()
         self._compute_cursor_measurements()
 
