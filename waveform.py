@@ -1,6 +1,15 @@
 # waveform.py
 
+import tkinter as tk
+from views.themed_frame import ThemedFrame
+
 import numpy as np
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+from matplotlib.offsetbox import AnchoredText
+
+from .scope_channel import ScopeChannel
+import waveform
 
 
 def draw_test_waveform(controller):
@@ -22,4 +31,21 @@ def draw_test_waveform(controller):
     home.update_fft_dual(sig1, sig2)
 
     # Update measurements (CH1 only)
-    home.compute_measurements(sig1)
+    
+def get_signals(n_channels: int, n_samples: int, fs: float):
+    """
+    Return a list of numpy arrays, one per channel.
+    For now: synthetic signals. Later: replace with real hardware input.
+    """
+    t = np.linspace(0, 1, n_samples, endpoint=False)
+
+    signals = []
+
+    for ch in range(n_channels):
+        # Example: different frequency per channel
+        freq = 5 * (ch + 1)
+        sig = np.sin(2 * np.pi * freq * t)
+        signals.append(sig)
+
+    return signals
+

@@ -3,10 +3,13 @@
 import tkinter as tk
 from views.themed_frame import ThemedFrame
 
+import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from matplotlib.offsetbox import AnchoredText
-import numpy as np
+
+from .scope_channel import ScopeChannel
+import waveform
 
 
 class HomePage(ThemedFrame):
@@ -59,6 +62,23 @@ class HomePage(ThemedFrame):
         self.sampling_rate = tk.DoubleVar(value=500.0)  # Hz
         self.freq = tk.DoubleVar(value=5.0)             # Hz
         self.amp = tk.DoubleVar(value=1.0)              # amplitude
+        self.n_samples = 500
+
+        # ---------- CHANNELS ----------
+        self.channels = []
+        self.channel_vars = []  # BooleanVar per channel
+
+        # For now: 2 channels, but scalable to 8
+        color_list = [
+            "yellow", "cyan", "magenta",
+            "green", "red", "blue", "orange", "white"
+            ]
+        n_init_channels = 2
+
+        for i in range(n_init_channels):
+            ch = ScopeChannel(
+                name=f"CH{i+1}", color=color_list[i], enabled=True)
+            self.channels.append(ch)
 
         # ---------- CURSOR STATE ----------
         # Cursor A and B positions (sample indices)
@@ -75,6 +95,14 @@ class HomePage(ThemedFrame):
         # ---------- REAL-TIME OSCILLOSCOPE STATE ----------
         # Flag used to start/stop the real-time update loop
         self.realtime_running = False
+
+        # ---------- UI LAYOUT ----------
+        self._build_channel_controls()
+        self._build_waveform_area()
+        self._build_measure_label()
+
+        # Start real-time mode automatically (optional)
+        self.start_realtime()
 
         # ---------- WAVEFORM PLOT AREA ----------
         self.wave_frame = tk.Frame(self)
@@ -205,8 +233,25 @@ class HomePage(ThemedFrame):
             command=self.generate_signal
         ).pack(side="left", padx=10)
 
-    # ---------- SIGNAL GENERATION & PLOTTING ----------
+    # ---------- CHANNEL SELECTION CONTROLS ----------
+    def _build_channel_controls(self):
+        """Create channel enable/disable checkboxes."""
+        ctrl_frame = tk.Frame(self)
+        ctrl_frame.grid(row=0, column=0, sticky="w", padx=10, pady=5)
 
+        for ch in self.channels:
+            var = tk.BooleanVar(value=True)
+            self.channel_vars.append(var)
+            cb = tk.Checkbutton(
+                ctrl_frame,
+                text=ch.name,
+                variable=var,
+                onvalue=True,
+                offvalue=False
+            )
+            cb.pack(side="left", padx=5)
+
+    # ---------- SIGNAL GENERATION & PLOTTING ----------
     def _generate_single_channel(self, sig_type, t):
         freq = self.freq.get()
         amp = self.amp.get()
@@ -290,6 +335,7 @@ class HomePage(ThemedFrame):
 
         # ---------- CURSOR INTERACTION ----------
 
+    # ---------- CURSOR INTERACTION ----------
     def _draw_cursors(self):
         """Draw vertical cursor lines on the waveform."""
         self._clear_cursor_lines()
@@ -388,7 +434,7 @@ class HomePage(ThemedFrame):
 
         self._update_measure_overlay(overlay_text)
 
-    # ---------- REAL-TIME OSCILLOSCOPE MODE ----------
+    # ---------- REAL-TIME LOOP ----------
 
     def start_realtime(self):
         """Start the real-time oscilloscope loop."""
@@ -460,7 +506,6 @@ class HomePage(ThemedFrame):
         self._compute_cursor_measurements()
 
     # ---------- TEXT REFRESH (I18N) ----------
-
     def refresh_text(self):
         self.label.config(text=self.controller.t("home"))
         self.btn_settings.config(text=self.controller.t("go_settings"))
