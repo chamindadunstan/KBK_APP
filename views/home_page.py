@@ -31,6 +31,12 @@ class HomePage(ThemedFrame):
         self.rowconfigure(2, weight=3)
         self.rowconfigure(3, weight=3)
 
+        # Row 0–5
+        for r in range(6):
+            self.rowconfigure(r, weight=0)
+        self.rowconfigure(2, weight=3)
+        self.rowconfigure(3, weight=3)
+
         # Columns 0–7
         for c in range(8):
             self.columnconfigure(c, weight=1)
@@ -64,9 +70,10 @@ class HomePage(ThemedFrame):
         self.amp = tk.DoubleVar(value=1.0)              # amplitude
         self.n_samples = 500
 
-        # ---------- CHANNELS ----------
-        self.channels = []
-        self.channel_vars = []  # BooleanVar per channel
+        # ---------- CHANNEL MODEL LIST ----------
+        self.channels: list[ScopeChannel] = []
+        """ # enable/disable per channel """
+        self.channel_vars: list[tk.BooleanVar] = []
 
         # For now: 2 channels, but scalable to 8
         color_list = [
@@ -77,7 +84,10 @@ class HomePage(ThemedFrame):
 
         for i in range(n_init_channels):
             ch = ScopeChannel(
-                name=f"CH{i+1}", color=color_list[i], enabled=True)
+                name=f"CH{i+1}",
+                color=color_list[i],
+                enabled=True
+            )
             self.channels.append(ch)
 
         # ---------- CURSOR STATE ----------
@@ -96,10 +106,12 @@ class HomePage(ThemedFrame):
         # Flag used to start/stop the real-time update loop
         self.realtime_running = False
 
-        # ---------- UI LAYOUT ----------
+        # ---------- BUILD UI ----------
         self._build_channel_controls()
         self._build_waveform_area()
+        self._build_fft_area()
         self._build_measure_label()
+        self._build_signal_generator_panel()
 
         # Start real-time mode automatically (optional)
         self.start_realtime()
@@ -233,26 +245,226 @@ class HomePage(ThemedFrame):
             command=self.generate_signal
         ).pack(side="left", padx=10)
 
-    # ---------- CHANNEL SELECTION CONTROLS ----------
+    # ---------- UI BUILDERS ----------
     def _build_channel_controls(self):
-        """Create channel enable/disable checkboxes."""
+        """Create per-channel enable checkboxes and settings buttons."""
         ctrl_frame = tk.Frame(self)
-        ctrl_frame.grid(row=0, column=0, sticky="w", padx=10, pady=5)
+        ctrl_frame.grid(
+            row=1, column=0, columnspan=8, sticky="w", padx=10, pady=5)
 
-        for ch in self.channels:
-            var = tk.BooleanVar(value=True)
+        for idx, ch in enumerate(self.channels):
+            row_frame = tk.Frame(ctrl_frame)
+            row_frame.pack(side="left", padx=10)
+
+            var = tk.BooleanVar(value=ch.enabled)
             self.channel_vars.append(var)
+
             cb = tk.Checkbutton(
-                ctrl_frame,
+                row_frame,
                 text=ch.name,
                 variable=var,
                 onvalue=True,
                 offvalue=False
             )
-            cb.pack(side="left", padx=5)
+            cb.pack(side="top", anchor="w")
+
+            btn = tk.Button(
+                row_frame,
+                text="Settings",
+                command=lambda i=idx: self._open_channel_menu(i)
+            )
+            btn.pack(side="top", pady=2)
+
+    def _build_waveform_area(self):
+        """Create waveform plot area."""
+        self.wave_frame = tk.Frame(self)
+        self.wave_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+
+        self.fig = Figure(figsize=(6, 3), dpi=100)
+        self.ax = self.fig.add_subplot(111)
+
+        self.ax.set_title("Signal Waveform")
+        self.ax.set_xlabel("Sample")
+        self.ax.set_ylabel("Amplitude")
+
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.wave_frame)
+        self.canvas_widget = self.canvas.get_tk_widget()
+        self.canvas_widget.pack(fill="both", expand=True)
+
+        # Click for cursors
+        self.canvas.mpl_connect("button_press_event", self._on_waveform_click)
+
+    def _build_fft_area(self):
+        """Create FFT plot area."""
+        self.fft_frame = tk.Frame(self)
+        self.fft_frame.grid(
+            row=3, column=0, columnspan=8,
+            sticky="nsew", padx=10, pady=10
+        )
+
+        self.fig_fft = Figure(figsize=(6, 3), dpi=100)
+        self.ax_fft = self.fig_fft.add_subplot(111)
+
+        self.ax_fft.set_title("FFT Spectrum")
+        self.ax_fft.set_xlabel("Frequency (Hz)")
+        self.ax_fft.set_ylabel("Magnitude")
+
+        self.canvas_fft = FigureCanvasTkAgg(
+            self.fig_fft, master=self.fft_frame)
+        self.canvas_fft.get_tk_widget().pack(fill="both", expand=True)
+
+    def _build_measure_label(self):
+        """Create bottom measurement label."""
+        self.measure_label = tk.Label(
+            self,
+            text="Peak: --   RMS: --   Freq: --"
+        )
+        self.measure_label.grid(
+            row=5, column=0, columnspan=8,
+            pady=5
+        )
+
+    def _build_signal_generator_panel(self):
+        """Create signal generator controls
+        (view only, model via waveform.py)."""
+        gen_frame = tk.Frame(self)
+        gen_frame.grid(
+            row=1, column=2, columnspan=6,
+            sticky="ew", padx=10, pady=5
+        )
+
+        # CH1 type
+        tk.Label(gen_frame, text="CH1:").pack(side="left", padx=5)
+        self.signal_type = tk.StringVar(value="sine")
+        tk.OptionMenu(
+            gen_frame, self.signal_type, "sine", "square", "noise"
+        ).pack(side="left")
+
+        # CH2 type
+        tk.Label(gen_frame, text="CH2:").pack(side="left", padx=5)
+        self.signal_type_ch2 = tk.StringVar(value="sine")
+        tk.OptionMenu(
+            gen_frame, self.signal_type_ch2, "sine", "square", "noise"
+        ).pack(side="left")
+
+        # Sampling rate slider
+        tk.Label(gen_frame, text="Rate (Hz):").pack(side="left", padx=5)
+        tk.Scale(
+            gen_frame,
+            from_=100,
+            to=5000,
+            resolution=100,
+            orient="horizontal",
+            variable=self.sampling_rate,
+            length=120
+        ).pack(side="left")
+
+        # Frequency slider
+        tk.Label(gen_frame, text="Freq (Hz):").pack(side="left", padx=5)
+        tk.Scale(
+            gen_frame,
+            from_=1,
+            to=50,
+            orient="horizontal",
+            variable=self.freq,
+            length=120
+        ).pack(side="left")
+
+        # Amplitude slider
+        tk.Label(gen_frame, text="Amp:").pack(side="left", padx=5)
+        tk.Scale(
+            gen_frame,
+            from_=0.1,
+            to=5.0,
+            resolution=0.1,
+            orient="horizontal",
+            variable=self.amp,
+            length=120
+        ).pack(side="left")
+
+        # Real-time controls
+        tk.Button(
+            gen_frame,
+            text="Start RT",
+            command=self.start_realtime
+        ).pack(side="left", padx=5)
+
+        tk.Button(
+            gen_frame,
+            text="Stop RT",
+            command=self.stop_realtime
+        ).pack(side="left", padx=5)
+
+        tk.Button(
+            gen_frame,
+            text="Generate",
+            command=self.generate_signal
+        ).pack(side="left", padx=10)
+
+    # ---------- PER-CHANNEL SETTINGS UI ----------
+    def _open_channel_menu(self, index: int):
+        """Open a small per-channel settings dialog
+        (scale, offset, probe, coupling)."""
+        ch = self.channels[index]
+
+        win = tk.Toplevel(self)
+        win.title(f"{ch.name} Settings")
+        win.grab_set()
+
+        tk.Label(
+            win, text=f"Settings for {ch.name}", font=("Arial", 12, "bold")
+            ).grid(
+            row=0, column=0, columnspan=2, pady=5
+        )
+
+        # Scale
+        tk.Label(win, text="Scale (V/div):"
+                 ).grid(row=1, column=0, sticky="e", padx=5, pady=2)
+        scale_var = tk.DoubleVar(value=ch.scale)
+        tk.Entry(win, textvariable=scale_var, width=10
+                 ).grid(row=1, column=1, sticky="w", padx=5, pady=2)
+
+        # Offset
+        tk.Label(win, text="Offset (V):"
+                 ).grid(row=2, column=0, sticky="e", padx=5, pady=2)
+        offset_var = tk.DoubleVar(value=ch.offset)
+        tk.Entry(win, textvariable=offset_var, width=10
+                 ).grid(row=2, column=1, sticky="w", padx=5, pady=2)
+
+        # Probe factor
+        tk.Label(win, text="Probe:"
+                 ).grid(row=3, column=0, sticky="e", padx=5, pady=2)
+
+        probe_var = tk.StringVar(value=str(ch.probe_factor))
+
+        tk.OptionMenu(
+            win,
+            probe_var,
+            "1", "10", "100"
+        ).grid(row=3, column=1, sticky="w", padx=5, pady=2)
+
+        # Coupling
+        tk.Label(win, text="Coupling:"
+                 ).grid(row=4, column=0, sticky="e", padx=5, pady=2)
+        coupling_var = tk.StringVar(value=ch.coupling)
+        tk.OptionMenu(win, coupling_var, "DC", "AC", "GND"
+                      ).grid(row=4, column=1, sticky="w", padx=5, pady=2)
+
+        def apply_and_close():
+            ch.scale = scale_var.get()
+            ch.offset = offset_var.get()
+            ch.probe_factor = int(probe_var.get())   # ← FIXED
+            ch.coupling = coupling_var.get()
+            self.update_waveform()
+            win.destroy()
+
+        tk.Button(win, text="Apply", command=apply_and_close).grid(
+            row=5, column=0, columnspan=2, pady=10
+        )
 
     # ---------- SIGNAL GENERATION & PLOTTING ----------
     def _generate_single_channel(self, sig_type, t):
+        """Legacy single-channel generator (used by Generate button)."""
         freq = self.freq.get()
         amp = self.amp.get()
 
@@ -266,6 +478,7 @@ class HomePage(ThemedFrame):
         return np.zeros_like(t)
 
     def generate_signal(self):
+        """Manual single-shot generation for CH1/CH2 (not real-time)."""
         # Time base: 1 second, N samples
         n_samples = 500
         t = np.linspace(0, 1, n_samples, endpoint=False)
@@ -274,43 +487,70 @@ class HomePage(ThemedFrame):
         sig1 = self._generate_single_channel(self.signal_type.get(), t)
         sig2 = self._generate_single_channel(self.signal_type_ch2.get(), t)
 
-        # Update waveform and FFT
-        self.update_waveform_dual(sig1, sig2)
-        self.update_fft_dual(sig1, sig2)
+        if len(self.channels) >= 1:
+            self.channels[0].set_signal(sig1)
+        if len(self.channels) >= 2:
+            self.channels[1].set_signal(sig2)
 
-        # Measurements on CH1
-        self.compute_measurements(sig1)
+        self.update_waveform()
+        self.update_fft()
+        self._auto_measure_first_enabled_channel()
 
-    def update_waveform_dual(self, sig1, sig2):
+    def update_waveform(self):
+        """Plot all enabled channels with their scale/offset applied."""
         self.ax.clear()
-        self.ax.plot(sig1, color="blue", label="CH1")
-        self.ax.plot(sig2, color="green", label="CH2")
         self.ax.set_title("Signal Waveform")
         self.ax.set_xlabel("Sample")
         self.ax.set_ylabel("Amplitude")
-        self.ax.legend()
+
+        for ch, var in zip(self.channels, self.channel_vars):
+            if var.get() and ch.signal is not None:
+                y = ch.scale * ch.signal + ch.offset
+                self.ax.plot(y, color=ch.color, label=ch.name)
+
+        if any(var.get() for var in self.channel_vars):
+            self.ax.legend(loc="upper left")
+
         self.canvas.draw()
 
-    def update_fft_dual(self, sig1, sig2):
+    def update_fft(self):
+        """Compute and plot FFT of the first enabled channel."""
+        enabled_channels = [
+            (ch, var) for ch, var in zip(self.channels, self.channel_vars)
+            if var.get() and ch.signal is not None
+        ]
+        if not enabled_channels:
+            self.ax_fft.clear()
+            self.ax_fft.set_title("FFT Spectrum")
+            self.ax_fft.set_xlabel("Frequency (Hz)")
+            self.ax_fft.set_ylabel("Magnitude")
+            self.canvas_fft.draw()
+            return
+
+        ch, _ = enabled_channels[0]
+
+        # Runtime + Pylance safety
+        if ch.signal is None:
+            return
+
+        sig = ch.signal
         fs = self.sampling_rate.get()
-        n = len(sig1)
+        n = len(sig)
 
-        freqs = np.fft.fftfreq(n, d=1 / fs)
-        idx = freqs >= 0
+        freqs = np.fft.rfftfreq(n, d=1.0 / fs)
+        spectrum = np.abs(np.fft.rfft(sig))
 
-        fft1 = np.abs(np.fft.fft(sig1))
-        fft2 = np.abs(np.fft.fft(sig2))
-
+        # placeholder:
         self.ax_fft.clear()
-        self.ax_fft.plot(freqs[idx], fft1[idx], color="red", label="CH1")
-        self.ax_fft.plot(freqs[idx], fft2[idx], color="orange", label="CH2")
-        self.ax_fft.set_title("FFT Spectrum")
-        self.ax_fft.set_xlabel("Frequency (Hz)")
+        self.ax_fft.plot(freqs, spectrum, color=ch.color)
+        self.ax_fft.set_title(f"FFT Spectrum ({ch.name})")
+        self.ax_fft.set_xlabel("Frequency [Hz]")
         self.ax_fft.set_ylabel("Magnitude")
-        self.ax_fft.legend()
-        self.canvas_fft.draw()
+        self.canvas.draw()
+        pass
 
     def compute_measurements(self, signal):
+        """Compute basic measurements for a given signal (used by Generate)."""
         peak = np.max(np.abs(signal))
         rms = np.sqrt(np.mean(signal ** 2))
 
@@ -333,11 +573,41 @@ class HomePage(ThemedFrame):
             )
         )
 
-        # ---------- CURSOR INTERACTION ----------
+    # ---------- CURSOR & MEASUREMENT LOGIC ----------
+    def _get_first_enabled_channel(self):
+        for ch, var in zip(self.channels, self.channel_vars):
+            if var.get() and ch.signal is not None:
+                return ch
+        return None
 
-    # ---------- CURSOR INTERACTION ----------
+    def _on_waveform_click(self, event):
+        if event.inaxes != self.ax:
+            return
+
+        x = int(event.xdata)
+
+        if self.cursor_a is None:
+            self.cursor_a = x
+        elif self.cursor_b is None:
+            self.cursor_b = x
+        else:
+            # Reset
+            self.cursor_a = None
+            self.cursor_b = None
+            self._clear_cursor_lines()
+
+            if self.measure_overlay is not None:
+                self.measure_overlay.remove()
+                self.measure_overlay = None
+
+            self.measure_label.config(text="Peak: --   RMS: --   Freq: --")
+            self.canvas.draw()
+            return
+
+        self._draw_cursors()
+        self._compute_cursor_measurements()
+
     def _draw_cursors(self):
-        """Draw vertical cursor lines on the waveform."""
         self._clear_cursor_lines()
 
         if self.cursor_a is not None:
@@ -360,14 +630,10 @@ class HomePage(ThemedFrame):
             line.remove()
         self.cursor_lines.clear()
 
-    # ---------- MEASUREMENT OVERLAY BOX ----------
     def _update_measure_overlay(self, text):
-        """Create or update the measurement overlay box."""
-        # Remove old overlay
         if self.measure_overlay is not None:
             self.measure_overlay.remove()
 
-        # Create new overlay
         self.measure_overlay = AnchoredText(
             text,
             loc="upper right",
@@ -377,7 +643,6 @@ class HomePage(ThemedFrame):
             borderpad=0.5
         )
 
-        # Style the box like Tektronix
         self.measure_overlay.patch.set_facecolor("black")
         self.measure_overlay.patch.set_alpha(0.6)
         self.measure_overlay.patch.set_edgecolor("white")
@@ -387,27 +652,33 @@ class HomePage(ThemedFrame):
 
     def _compute_cursor_measurements(self):
         """Compute peak, RMS, and frequency based on cursor positions."""
-        if self.cursor_a is None:
+        ch = self._get_first_enabled_channel()
+        if ch is None or ch.signal is None:
             return
 
-        # Use CH1 for measurement
-        n_samples = 500
-        t = np.linspace(0, 1, n_samples, endpoint=False)
-        sig = self._generate_single_channel(self.signal_type.get(), t)
+        sig = ch.signal
+        n = len(sig)
 
-        # If only one cursor: show value at that point
+        if self.cursor_a is None or self.cursor_a < 0 or self.cursor_a >= n:
+            return
+
+        fs = self.sampling_rate.get()
+
+        # Single cursor: show value
         if self.cursor_b is None:
             y = sig[self.cursor_a]
-
             overlay_text = (
+                f"{ch.name}\n"
                 f"Cursor A: {self.cursor_a}\n"
                 f"Value: {y:.3f}"
             )
-
             self._update_measure_overlay(overlay_text)
             return
 
-        # Two cursors: measure region
+        # Two cursors: region
+        if self.cursor_b < 0 or self.cursor_b >= n:
+            return
+
         a, b = sorted([self.cursor_a, self.cursor_b])
         region = sig[a:b]
 
@@ -416,14 +687,11 @@ class HomePage(ThemedFrame):
 
         peak = np.max(np.abs(region))
         rms = np.sqrt(np.mean(region**2))
-
-        # Frequency from time difference
-        fs = self.sampling_rate.get()
         dt = (b - a) / fs
         freq = 1 / dt if dt > 0 else 0
 
-        # ---------- OVERLAY TEXT  ----------
         overlay_text = (
+            f"{ch.name}\n"
             f"Cursor A: {a}\n"
             f"Cursor B: {b}\n"
             f"ΔX: {b - a} samples ({dt:.4f} s)\n"
@@ -434,8 +702,19 @@ class HomePage(ThemedFrame):
 
         self._update_measure_overlay(overlay_text)
 
-    # ---------- REAL-TIME LOOP ----------
+    def _auto_measure_first_enabled_channel(self):
+        ch = self._get_first_enabled_channel()
+        if ch is None or ch.signal is None:
+            return
 
+        sig = ch.signal
+        peak = np.max(np.abs(sig))
+        rms = np.sqrt(np.mean(sig**2))
+        self.measure_label.config(
+            text=f"{ch.name}  Peak: {peak:.3f}   RMS: {rms:.3f}"
+        )
+
+    # ---------- REAL-TIME LOOP ----------
     def start_realtime(self):
         """Start the real-time oscilloscope loop."""
         if not self.realtime_running:
@@ -447,63 +726,26 @@ class HomePage(ThemedFrame):
         self.realtime_running = False
 
     def _realtime_loop(self):
-        """Internal loop that updates the oscilloscope at ~60 FPS."""
         if not self.realtime_running:
             return
 
-        # Time base
-        n_samples = 500
-        t = np.linspace(0, 1, n_samples, endpoint=False)
+        fs = self.sampling_rate.get()
+        n = self.n_samples
 
-        # Generate CH1 and CH2
-        sig1 = self._generate_single_channel(self.signal_type.get(), t)
-        sig2 = self._generate_single_channel(self.signal_type_ch2.get(), t)
+        # Get signals from waveform.py
+        signals = waveform.get_signals(len(self.channels), n, fs)
 
-        # Update UI
-        self.update_waveform_dual(sig1, sig2)
-        self.update_fft_dual(sig1, sig2)
-        self.compute_measurements(sig1)
+        # Assign signals to channels
+        for ch, sig in zip(self.channels, signals):
+            ch.set_signal(sig)
+
+        # Update plots and measurements
+        self.update_waveform()
+        self.update_fft()
+        self._auto_measure_first_enabled_channel()
 
         # Schedule next frame (16 ms = ~60 FPS)
         self.after(16, self._realtime_loop)
-
-        # ---------- CURSOR INTERACTION ----------
-
-    def _on_waveform_click(self, event):
-        """Handle mouse clicks on the waveform to place cursors."""
-        # Ignore clicks outside the waveform axes
-        if event.inaxes != self.ax:
-            return
-
-        x = int(event.xdata)
-
-        # First click sets Cursor A
-        if self.cursor_a is None:
-            self.cursor_a = x
-
-        # Second click sets Cursor B
-        elif self.cursor_b is None:
-            self.cursor_b = x
-
-        # Third click → Reset everything
-        else:
-            self.cursor_a = None
-            self.cursor_b = None
-            self._clear_cursor_lines()
-
-            # Remove overlay box
-            if self.measure_overlay is not None:
-                self.measure_overlay.remove()
-                self.measure_overlay = None
-
-            # Reset bottom label
-            self.measure_label.config(text="Peak: --   RMS: --   Freq: --")
-
-            # Redraw canvas
-            self.canvas.draw()
-            return
-        self._draw_cursors()
-        self._compute_cursor_measurements()
 
     # ---------- TEXT REFRESH (I18N) ----------
     def refresh_text(self):
