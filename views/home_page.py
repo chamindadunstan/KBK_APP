@@ -1,6 +1,7 @@
 # views/home_page.py
 
 import tkinter as tk
+from tkinter import ttk
 from views.themed_frame import ThemedFrame
 
 import numpy as np
@@ -26,10 +27,6 @@ class HomePage(ThemedFrame):
         # 3: FFT plot
         # 4: Navigation buttons
         # 5: Measurement display
-        for r in range(6):
-            self.rowconfigure(r, weight=0)
-        self.rowconfigure(2, weight=3)
-        self.rowconfigure(3, weight=3)
 
         # Row 0–5
         for r in range(6):
@@ -108,149 +105,20 @@ class HomePage(ThemedFrame):
 
         # ---------- BUILD UI ----------
         self._build_channel_controls()
+        self._build_signal_generator_panel()
         self._build_waveform_area()
         self._build_fft_area()
         self._build_measure_label()
-        self._build_signal_generator_panel()
 
-        # Start real-time mode automatically (optional)
-        self.start_realtime()
-
-        # ---------- WAVEFORM PLOT AREA ----------
-        self.wave_frame = tk.Frame(self)
-        self.wave_frame.grid(
-            row=2, column=0, columnspan=8,
-            sticky="nsew", padx=10, pady=10
-        )
-
-        self.fig = Figure(figsize=(6, 3), dpi=100)
-        self.ax = self.fig.add_subplot(111)
-
-        self.ax.plot([], [])
-        self.ax.set_title("Signal Waveform")
-        self.ax.set_xlabel("Sample")
-        self.ax.set_ylabel("Amplitude")
-
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.wave_frame)
-        self.canvas_widget = self.canvas.get_tk_widget()
-        self.canvas_widget.pack(fill="both", expand=True)
-
-        # Enable cursor click detection on waveform
-        self.canvas.mpl_connect("button_press_event", self._on_waveform_click)
-
-        # ---------- FFT PLOT AREA ----------
-        self.fft_frame = tk.Frame(self)
-        self.fft_frame.grid(
-            row=3, column=0, columnspan=8,
-            sticky="nsew", padx=10, pady=10
-        )
-
-        self.fig_fft = Figure(figsize=(6, 3), dpi=100)
-        self.ax_fft = self.fig_fft.add_subplot(111)
-
-        self.ax_fft.plot([], [])
-        self.ax_fft.set_title("FFT Spectrum")
-        self.ax_fft.set_xlabel("Frequency (Hz)")
-        self.ax_fft.set_ylabel("Magnitude")
-
-        self.canvas_fft = FigureCanvasTkAgg(
-            self.fig_fft, master=self.fft_frame)
-        self.canvas_fft.get_tk_widget().pack(fill="both", expand=True)
-
-        # ---------- MEASUREMENT DISPLAY ----------
-        self.measure_label = tk.Label(
-            self,
-            text="Peak: --   RMS: --   Freq: --"
-        )
-        self.measure_label.grid(
-            row=5, column=0, columnspan=8,
-            pady=5
-        )
-
-        # ---------- SIGNAL GENERATOR PANEL ----------
-        gen_frame = tk.Frame(self)
-        gen_frame.grid(
-            row=1, column=0, columnspan=8,
-            sticky="ew", padx=10, pady=5
-        )
-
-        # CH1 type
-        tk.Label(gen_frame, text="CH1:").pack(side="left", padx=5)
-        self.signal_type = tk.StringVar(value="sine")
-        tk.OptionMenu(
-            gen_frame, self.signal_type, "sine", "square", "noise"
-        ).pack(side="left")
-
-        # CH2 type
-        tk.Label(gen_frame, text="CH2:").pack(side="left", padx=5)
-        self.signal_type_ch2 = tk.StringVar(value="sine")
-        tk.OptionMenu(
-            gen_frame, self.signal_type_ch2, "sine", "square", "noise"
-        ).pack(side="left")
-
-        # Sampling rate slider
-        tk.Label(gen_frame, text="Rate (Hz):").pack(side="left", padx=5)
-        tk.Scale(
-            gen_frame,
-            from_=100,
-            to=5000,
-            resolution=100,
-            orient="horizontal",
-            variable=self.sampling_rate,
-            length=120
-        ).pack(side="left")
-
-        # Frequency slider
-        tk.Label(gen_frame, text="Freq (Hz):").pack(side="left", padx=5)
-        tk.Scale(
-            gen_frame,
-            from_=1,
-            to=50,
-            orient="horizontal",
-            variable=self.freq,
-            length=120
-        ).pack(side="left")
-
-        # Amplitude slider
-        tk.Label(gen_frame, text="Amp:").pack(side="left", padx=5)
-        tk.Scale(
-            gen_frame,
-            from_=0.1,
-            to=5.0,
-            resolution=0.1,
-            orient="horizontal",
-            variable=self.amp,
-            length=120
-        ).pack(side="left")
-
-        # --- Real-time oscilloscope controls ---
-        # Start real-time mode (30–60 FPS)
-        tk.Button(
-            gen_frame,
-            text="Start RT",
-            command=self.start_realtime
-        ).pack(side="left", padx=5)
-
-        # Stop real-time mode
-        tk.Button(
-            gen_frame,
-            text="Stop RT",
-            command=self.stop_realtime
-        ).pack(side="left", padx=5)
-
-        # Generate button
-        tk.Button(
-            gen_frame,
-            text="Generate",
-            command=self.generate_signal
-        ).pack(side="left", padx=10)
+        self._build_status_bar()  # Create Status bar
+        self.start_realtime()  # Start real-time mode automatically (optional)
 
     # ---------- UI BUILDERS ----------
     def _build_channel_controls(self):
         """Create per-channel enable checkboxes and settings buttons."""
         ctrl_frame = tk.Frame(self)
         ctrl_frame.grid(
-            row=1, column=0, columnspan=8, sticky="w", padx=10, pady=5)
+            row=1, column=0, columnspan=1, sticky="w", padx=10, pady=5)
 
         for idx, ch in enumerate(self.channels):
             row_frame = tk.Frame(ctrl_frame)
@@ -264,7 +132,8 @@ class HomePage(ThemedFrame):
                 text=ch.name,
                 variable=var,
                 onvalue=True,
-                offvalue=False
+                offvalue=False,
+                command=lambda i=idx: self._on_channel_toggle(i)
             )
             cb.pack(side="top", anchor="w")
 
@@ -275,10 +144,127 @@ class HomePage(ThemedFrame):
             )
             btn.pack(side="top", pady=2)
 
+    def _on_channel_toggle(self, index):
+        enabled = self.channel_vars[index].get()
+
+        if index == 0:  # CH1
+            if enabled:
+                self.sb_ch1.config(text="CH1: ON", bg="#303030")
+            else:
+                self.sb_ch1.config(text="CH1: OFF", bg="#404040")
+
+        if index == 1:  # CH2
+            if enabled:
+                self.sb_ch2.config(text="CH2: ON", bg="#303030")
+            else:
+                self.sb_ch2.config(text="CH2: OFF", bg="#404040")
+
+        self.update_waveform()
+
+    def _build_signal_generator_panel(self):
+        """Create signal generator controls (per-channel tabs)."""
+        gen_frame = tk.Frame(self)
+        gen_frame.grid(
+            row=1, column=7, rowspan=3,
+            sticky="ns", padx=10, pady=5
+        )
+
+        # -----------------------------------------
+        # notebook container
+        nb_container = tk.Frame(gen_frame)
+        nb_container.pack(fill="both", expand=False)
+
+        # Notebook for CH1, CH2, ... CHn
+        channelbook = ttk.Notebook(nb_container)
+        channelbook.pack(fill="both", expand=True)
+        # -----------------------------------------
+
+        # Create one tab per channel
+        self.channel_panels = []
+
+        for ch in self.channels:
+            tab = ttk.Frame(channelbook)
+            channelbook.add(tab, text=ch.name)
+            self.channel_panels.append(tab)
+
+            # grid layout with 3 columns
+            for col in range(3):
+                tab.columnconfigure(col, weight=1)
+
+            # --- Signal Type ---
+            tk.Label(tab, text="Type:").grid(
+                row=0, column=0, sticky="w", padx=5, pady=2)
+            ch.signal_type_var = tk.StringVar(value="sine")
+            tk.OptionMenu(
+                tab, ch.signal_type_var, "sine", "square", "noise"
+            ).grid(row=0, column=1)
+
+            # --- Frequency slider ---
+            tk.Label(tab, text="Freq (Hz):").grid(
+                row=1, column=0, sticky="w", padx=5, pady=2)
+            ch.freq_var = tk.DoubleVar(value=5.0)
+            tk.Scale(
+                tab, from_=1, to=50,
+                orient="horizontal", variable=ch.freq_var, length=120
+                ).grid(row=1, column=1)
+
+            # --- Amplitude slider ---
+            tk.Label(tab, text="Amp:").grid(
+                row=2, column=0, sticky="w", padx=5, pady=2)
+            ch.amp_var = tk.DoubleVar(value=1.0)
+            tk.Scale(
+                tab, from_=0.1, to=5.0, resolution=0.1,
+                orient="horizontal",
+                variable=ch.amp_var, length=120
+                    ).grid(row=2, column=1)
+
+        # --- Global controls  ---
+        ctrl_frame = tk.Frame(gen_frame)
+        ctrl_frame.pack(fill="x", pady=5)
+
+        # Left side: sampling rate slider
+        rate_frame = tk.Frame(ctrl_frame)
+        rate_frame.pack(side="left", padx=5)
+
+        tk.Label(rate_frame, text="Rate (Hz):").pack(side="left", padx=5)
+        tk.Scale(rate_frame,
+                 from_=100, to=5000, resolution=100,
+                 orient="horizontal",
+                 variable=self.sampling_rate, length=120
+                 ).pack()
+
+        # Right side: control buttons
+        btn_frame = tk.Frame(ctrl_frame)
+        btn_frame.pack(side="right", padx=10)
+
+        # RT status LED
+        self.rt_status = tk.Label(
+            btn_frame,
+            text="RT OFF",
+            bg="#444444",
+            fg="white",
+            font=("Arial", 10, "bold"),
+            width=8,
+            height=1,
+            relief="ridge",
+            bd=2
+        )
+        self.rt_status.pack(side="right", padx=10)
+        self.rt_status.config(text="RT OFF", bg="#444444")
+
+        tk.Button(btn_frame, text="Start RT", command=self.start_realtime
+                  ).pack(side="right", padx=5)
+        tk.Button(btn_frame, text="Stop RT", command=self.stop_realtime
+                  ).pack(side="right", padx=5)
+        tk.Button(btn_frame, text="Generate", command=self._generate_manual
+                  ).pack(side="right", padx=10)
+
     def _build_waveform_area(self):
         """Create waveform plot area."""
         self.wave_frame = tk.Frame(self)
-        self.wave_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+        self.wave_frame.grid(
+            row=2, column=0, columnspan=7,
+            sticky="nsew", padx=10, pady=10)
 
         self.fig = Figure(figsize=(6, 3), dpi=100)
         self.ax = self.fig.add_subplot(111)
@@ -298,7 +284,7 @@ class HomePage(ThemedFrame):
         """Create FFT plot area."""
         self.fft_frame = tk.Frame(self)
         self.fft_frame.grid(
-            row=3, column=0, columnspan=8,
+            row=3, column=0, columnspan=7,
             sticky="nsew", padx=10, pady=10
         )
 
@@ -324,82 +310,42 @@ class HomePage(ThemedFrame):
             pady=5
         )
 
-    def _build_signal_generator_panel(self):
-        """Create signal generator controls
-        (view only, model via waveform.py)."""
-        gen_frame = tk.Frame(self)
-        gen_frame.grid(
-            row=1, column=2, columnspan=6,
-            sticky="ew", padx=10, pady=5
-        )
+    def _build_status_bar(self):
+        self.status_frame = tk.Frame(self, bg="#202020")
+        self.status_frame.grid(row=4, column=0, columnspan=8, sticky="ew")
 
-        # CH1 type
-        tk.Label(gen_frame, text="CH1:").pack(side="left", padx=5)
-        self.signal_type = tk.StringVar(value="sine")
-        tk.OptionMenu(
-            gen_frame, self.signal_type, "sine", "square", "noise"
-        ).pack(side="left")
+        # Make it stretch
+        self.status_frame.columnconfigure(0, weight=1)
+        self.status_frame.columnconfigure(1, weight=1)
+        self.status_frame.columnconfigure(2, weight=1)
+        self.status_frame.columnconfigure(3, weight=1)
+        self.status_frame.columnconfigure(4, weight=1)
+        self.status_frame.columnconfigure(5, weight=1)
 
-        # CH2 type
-        tk.Label(gen_frame, text="CH2:").pack(side="left", padx=5)
-        self.signal_type_ch2 = tk.StringVar(value="sine")
-        tk.OptionMenu(
-            gen_frame, self.signal_type_ch2, "sine", "square", "noise"
-        ).pack(side="left")
+        def make_block(parent, text, col):
+            lbl = tk.Label(
+                parent,
+                text=text,
+                bg="#303030",
+                fg="white",
+                font=("Arial", 9, "bold"),
+                width=10,
+                height=1,
+                relief="ridge",
+                bd=2,
+                anchor="w",
+                padx=4
+            )
+            lbl.grid(row=0, column=col, padx=2, pady=2, sticky="ew")
+            return lbl
 
-        # Sampling rate slider
-        tk.Label(gen_frame, text="Rate (Hz):").pack(side="left", padx=5)
-        tk.Scale(
-            gen_frame,
-            from_=100,
-            to=5000,
-            resolution=100,
-            orient="horizontal",
-            variable=self.sampling_rate,
-            length=120
-        ).pack(side="left")
-
-        # Frequency slider
-        tk.Label(gen_frame, text="Freq (Hz):").pack(side="left", padx=5)
-        tk.Scale(
-            gen_frame,
-            from_=1,
-            to=50,
-            orient="horizontal",
-            variable=self.freq,
-            length=120
-        ).pack(side="left")
-
-        # Amplitude slider
-        tk.Label(gen_frame, text="Amp:").pack(side="left", padx=5)
-        tk.Scale(
-            gen_frame,
-            from_=0.1,
-            to=5.0,
-            resolution=0.1,
-            orient="horizontal",
-            variable=self.amp,
-            length=120
-        ).pack(side="left")
-
-        # Real-time controls
-        tk.Button(
-            gen_frame,
-            text="Start RT",
-            command=self.start_realtime
-        ).pack(side="left", padx=5)
-
-        tk.Button(
-            gen_frame,
-            text="Stop RT",
-            command=self.stop_realtime
-        ).pack(side="left", padx=5)
-
-        tk.Button(
-            gen_frame,
-            text="Generate",
-            command=self.generate_signal
-        ).pack(side="left", padx=10)
+        # Segments
+        self.sb_rt = make_block(self.status_frame, "RT: OFF", 0)
+        self.sb_trig = make_block(self.status_frame, "TRIG: AUTO", 1)
+        self.sb_acq = make_block(self.status_frame, "ACQ: SAMPLE", 2)
+        self.sb_ch1 = make_block(self.status_frame, "CH1: ON", 3)
+        self.sb_ch2 = make_block(self.status_frame, "CH2: ON", 4)
+        self.sb_meas = make_block(self.status_frame, "MEAS: OFF", 5)
 
     # ---------- PER-CHANNEL SETTINGS UI ----------
     def _open_channel_menu(self, index: int):
@@ -463,10 +409,8 @@ class HomePage(ThemedFrame):
         )
 
     # ---------- SIGNAL GENERATION & PLOTTING ----------
-    def _generate_single_channel(self, sig_type, t):
+    def _generate_single_channel(self, sig_type, t, freq, amp):
         """Legacy single-channel generator (used by Generate button)."""
-        freq = self.freq.get()
-        amp = self.amp.get()
 
         if sig_type == "sine":
             return amp * np.sin(2 * np.pi * freq * t)
@@ -480,21 +424,32 @@ class HomePage(ThemedFrame):
     def generate_signal(self):
         """Manual single-shot generation for CH1/CH2 (not real-time)."""
         # Time base: 1 second, N samples
-        n_samples = 500
+        n_samples = self.n_samples
         t = np.linspace(0, 1, n_samples, endpoint=False)
 
-        # CH1 and CH2
-        sig1 = self._generate_single_channel(self.signal_type.get(), t)
-        sig2 = self._generate_single_channel(self.signal_type_ch2.get(), t)
+        for ch in self.channels:
+            if (
+                ch.signal_type_var is None or
+                ch.freq_var is None or
+                ch.amp_var is None
+            ):
+                continue  # or raise an error
 
-        if len(self.channels) >= 1:
-            self.channels[0].set_signal(sig1)
-        if len(self.channels) >= 2:
-            self.channels[1].set_signal(sig2)
+            sig = self._generate_single_channel(
+                ch.signal_type_var.get(),
+                t,
+                ch.freq_var.get(),
+                ch.amp_var.get()
+            )
+            ch.set_signal(sig)
 
         self.update_waveform()
         self.update_fft()
         self._auto_measure_first_enabled_channel()
+
+    def _generate_manual(self):
+        self.stop_realtime()      # Stop RT so it doesn't overwrite your signal
+        self.generate_signal()    # Now generate CH1/CH2 signals
 
     def update_waveform(self):
         """Plot all enabled channels with their scale/offset applied."""
@@ -527,13 +482,13 @@ class HomePage(ThemedFrame):
             self.canvas_fft.draw()
             return
 
-        ch, _ = enabled_channels[0]
-
         # Runtime + Pylance safety
-        if ch.signal is None:
-            return
-
+        ch, _ = enabled_channels[0]
         sig = ch.signal
+        if sig is None:
+            return
+        # -------------------------------
+
         fs = self.sampling_rate.get()
         n = len(sig)
 
@@ -601,6 +556,7 @@ class HomePage(ThemedFrame):
                 self.measure_overlay = None
 
             self.measure_label.config(text="Peak: --   RMS: --   Freq: --")
+            self.sb_meas.config(text="MEAS: OFF", bg="#303030")
             self.canvas.draw()
             return
 
@@ -651,6 +607,7 @@ class HomePage(ThemedFrame):
         self.canvas.draw()
 
     def _compute_cursor_measurements(self):
+        self.sb_meas.config(text="MEAS: ON", bg="#004488")
         """Compute peak, RMS, and frequency based on cursor positions."""
         ch = self._get_first_enabled_channel()
         if ch is None or ch.signal is None:
@@ -703,6 +660,7 @@ class HomePage(ThemedFrame):
         self._update_measure_overlay(overlay_text)
 
     def _auto_measure_first_enabled_channel(self):
+        self.sb_meas.config(text="MEAS: ON", bg="#004488")
         ch = self._get_first_enabled_channel()
         if ch is None or ch.signal is None:
             return
@@ -716,24 +674,45 @@ class HomePage(ThemedFrame):
 
     # ---------- REAL-TIME LOOP ----------
     def start_realtime(self):
+        print("Start RT instance:", id(self))
+
         """Start the real-time oscilloscope loop."""
         if not self.realtime_running:
+            print(">>> Start RT pressed")
+
             self.realtime_running = True
+            # indicator ON
+            self.rt_status.config(
+                text="RT ON", bg="#00aa00")   # #00aa00 Tektronix green
+            # status bar
+            self.sb_rt.config(text="RT: ON", bg="#006600")
             self._realtime_loop()
 
     def stop_realtime(self):
+        print("Stop RT instance:", id(self))
+
         """Stop the real-time oscilloscope loop."""
+        print(">>> Stop RT pressed")
+
         self.realtime_running = False
+        # indicator OFF
+        self.rt_status.config(text="RT OFF", bg="#660000")
+        # status bar
+        self.sb_rt.config(text="RT: OFF", bg="#660000")
 
     def _realtime_loop(self):
+
         if not self.realtime_running:
+
             return
+        print(">>> RT loop running")
+        self.measure_label.config(text="RT: ON")
 
         fs = self.sampling_rate.get()
         n = self.n_samples
 
         # Get signals from waveform.py
-        signals = waveform.get_signals(len(self.channels), n, fs)
+        signals = waveform.get_signals(len(self.channels), n, fs, home=self)
 
         # Assign signals to channels
         for ch, sig in zip(self.channels, signals):

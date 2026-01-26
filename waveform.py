@@ -27,19 +27,25 @@ def draw_test_waveform(controller):
     home._auto_measure_first_enabled_channel()
 
 
-def get_signals(n_channels: int, n_samples: int, fs: float):
+def get_signals(n_channels, n_samples, fs, home=None):
     """
     Return a list of numpy arrays, one per channel.
     For now: synthetic signals. Later: replace with real hardware input.
     """
-    t = np.linspace(0, 1, n_samples, endpoint=False)
+    # Safety: avoid Pylance warnings and runtime errors
+    if home is None:
+        return [np.zeros(n_samples) for _ in range(n_channels)]
 
+    t = np.linspace(0, 1, n_samples, endpoint=False)
     signals = []
 
-    for ch in range(n_channels):
-        # Example: different frequency per channel
-        freq = 5 * (ch + 1)
-        sig = np.sin(2 * np.pi * freq * t)
+    for ch in home.channels:
+        sig = home._generate_single_channel(
+            ch.signal_type_var.get(),
+            t,
+            ch.freq_var.get(),
+            ch.amp_var.get()
+        )
         signals.append(sig)
 
     return signals

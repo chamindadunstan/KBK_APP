@@ -1,5 +1,6 @@
 # app.py
-
+import sys
+import os
 import tkinter as tk
 # from tkinter import ttk
 from waveform import draw_test_waveform
@@ -17,7 +18,7 @@ class App(tk.Tk):
 
         self.title("KBK App")
         self.geometry("800x440")
-        self.iconbitmap('./assets/kbk.ico')
+        self.iconbitmap(resource_path("assets/kbk.ico"))
         # Create the container frame (must be tk.Frame, not ttk.Frame)
         self.container = tk.Frame(self)
         self.container.pack(fill="both", expand=True)
@@ -42,3 +43,10 @@ class App(tk.Tk):
 
         # Inject waveform
         draw_test_waveform(self.controller)
+
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    if hasattr(sys, '_MEIPASS'):  # type: ignore
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
